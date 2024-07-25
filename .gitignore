@@ -1,0 +1,5 @@
+#ignorar la carpeta de node_modules
+/Back_Proyecto/node_modules
+
+#ignorar el .env
+.env
