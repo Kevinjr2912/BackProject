@@ -1,26 +1,10 @@
-require("dotenv").config();
-
 //Cargar las variables de entorno
-const mysql = require("mysql2");
+const db = require('../database/conecction');
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
-
-// Configuración de la conexión a la base de datos MySQL
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_DATABASE,
-});
-
-db.connect((err) => {
-  if (err) {
-    throw err;
-  }
-
-  console.log("Conexión a la base de datos MySQL establecida");
-});
+const path = require('path');
+const fs = require('fs');
 
 // Middleware de autenticación
 const authenticateJWT = (req, res, next) => {
@@ -39,59 +23,63 @@ const authenticateJWT = (req, res, next) => {
   }
 };
 
-//Configurar multer
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage }).array("imagen", 5);
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+      cb(null, path.join(__dirname, '..','uploads'));
+  },
+  filename: (req, file, cb) => {
+      cb(null, `${file.originalname}`);
+  }
+});
 
-// Ruta para agregar producto y subir imágenes
+const upload = multer({ 
+  storage, 
+  limits: { fileSize: 10 * 1024 * 1024 }, // Limita el tamaño del archivo a 10MB
+  fileFilter: (req, file, cb) => {        
+      if (!file.mimetype.startsWith('image/')) {
+          return cb(new Error('Please upload an image'));
+      }
+      cb(null, true);
+  }
+}).array("imagen",3);
+
 exports.addProduct = (req, res) => {
   upload(req, res, (err) => {
+    if (err) {
+      console.error('Error en Multer:', err);
+      return res.status(400).send(err.message);
+    }
+    
+    console.log('Cuerpo de la solicitud:', req.body);
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).send('No se subieron los archivos');
+    }
+
     const files = req.files;
-
-    if (!files) {
-      return res.status(404).json({ message: "Imagenes no recibidas" });
-    }
-
-    const { nombre, precio, nombreCategoria, descripcion, id_equipo } =
-      req.body;
-
-    let idCategoria = 0;
-
-    if (nombreCategoria == "Overol") {
-      idCategoria = 2;
-    } else {
-      idCategoria = 1;
-    }
+    const { nombre, precio, descripcion, id_equipo, id_categoria } = req.body;
 
     db.query(
       "INSERT INTO Productos (nombre, precio, descripcion, id_equipo, id_categoria) VALUES (?, ?, ?, ?, ?)",
-      [nombre, precio, descripcion, id_equipo, idCategoria],
+      [nombre, precio, descripcion, id_equipo, id_categoria],
       (err, result) => {
         if (err) {
-          return res
-            .status(500)
-            .json({ message: "Error al agregar el producto" });
+          console.error('Error al agregar producto:', err);
+          return res.status(500).json({ message: "Error al agregar el producto" });
         }
 
         const idProducto = result.insertId;
-        const imageValues = files.map((file) => [idProducto, file.buffer]);
+        const imageValues = files.map((file) => [idProducto, file.filename, file.path]);
 
         db.query(
-          "INSERT INTO ImagenProducto (idProducto,imagen) VALUES ?",
+          "INSERT INTO ImagenProducto (idProducto, filename, filepath) VALUES ?",
           [imageValues],
-          (err, result) => {
+          (err) => {
             if (err) {
-              console.log("Sucedio un error");
-
-              return res
-                .status(500)
-                .json({
-                  message: "Error al agregar las imágenes del producto",
-                });
+              console.error('Error al agregar imágenes:', err);
+              return res.status(500).json({ message: "Error al agregar las imágenes del producto" });
             }
-            return res
-              .status(201)
-              .json({ message: "Producto e imágenes agregadas exitosamente" });
+            return res.status(201).json({ message: "Producto e imágenes agregadas exitosamente" });
           }
         );
       }
@@ -116,9 +104,10 @@ exports.getAllProducts = (req, res) => {
 
 exports.getAllHelmets = (req, res) => {
   db.query(
-    "SELECT P.idProductos, P.nombre, P.precio, P.descripcion, C.nombreCategoria, E.nombre_equipo , MIN(IP.imagen) AS imagen FROM Productos P INNER JOIN Categoria C ON P.id_categoria = C.idCategoria INNER JOIN ImagenProducto IP ON P.idProductos = IP.idProducto INNER JOIN Equipo E ON P.id_equipo = E.idEquipo WHERE P.id_categoria = 1 GROUP BY P.idProductos",
+    "SELECT P.idProductos, P.nombre, P.precio, P.descripcion, C.nombreCategoria, E.nombre_equipo,IP.filename FROM Productos P INNER JOIN Categoria C ON P.id_categoria = C.idCategoria INNER JOIN Equipo E ON P.id_equipo = E.idEquipo INNER JOIN ImagenProducto IP ON IP.idProducto = P.idProductos GROUP BY IP.idProducto",
     (err, result) => {
       if (err) {
+        console.log(err)
         return res.json({ error: "Error al obtener los cascos" });
       }
 
@@ -129,12 +118,11 @@ exports.getAllHelmets = (req, res) => {
         descripcion: product.descripcion,
         nombreCategoria: product.nombreCategoria,
         nombreEquipo: product.nombre_equipo,
-        imagen: product.imagen.toString("base64"),
+        filename: product.filename,
       }));
 
-      console.log(products);
-
-      res.json(products);
+      // console.log(products);
+      return res.json(products);
     }
   );
 };
@@ -143,10 +131,9 @@ exports.getInformationProduct = (req, res) => {
   const idProducto = req.params.idProducto;
   console.log(idProducto);
   let objInformationProduct = {};
-  let img = [];
 
   db.query(
-    "SELECT IP.imagen FROM ImagenProducto IP WHERE IP.idProducto = ?",
+    "SELECT IP.filename FROM ImagenProducto IP WHERE IP.idProducto = ?",
     [idProducto],
     (err, result) => {
       if (err) {
@@ -155,11 +142,12 @@ exports.getInformationProduct = (req, res) => {
         });
       }
 
-      let images = result.map((img) => img.imagen.toString("base64"));
+      let imagesReferences = result.map((imgFilename) => imgFilename.filename);
 
-      objInformationProduct.img1 = images[0];
-      objInformationProduct.img2 = images[1];
-      objInformationProduct.img3 = images[2];
+      console.log(imagesReferences)
+      objInformationProduct.img1Filename = imagesReferences[0];
+      objInformationProduct.img2Filename = imagesReferences[1];
+      objInformationProduct.img3Filename = imagesReferences[2];
     }
   );
 
@@ -180,6 +168,8 @@ exports.getInformationProduct = (req, res) => {
         objInformationProduct.descripcion = result[0].descripcion;
         objInformationProduct.nombreCategoria = result[0].nombreCategoria;
       }
+
+      console.log(objInformationProduct)
 
       return res.json(objInformationProduct);
     }

@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
+const path = require('path');
 
 const customersRoutes = require('./routes/clientes');
 const productsRoutes = require('./routes/productos');
@@ -36,6 +37,9 @@ app.use('/api',dipomexRoutes);
 app.use('/shippingData',shippingDataRoutes);
 app.use('/comprobantes', comprobantesPagoRoutes);
 app.use('/cars',carRoutes);
+
+// Servir archivos estáticos desde el directorio 'uploads'
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.listen(port, () => {
     console.log(`Servidor Express en ejecución en http://localhost:${port}`);

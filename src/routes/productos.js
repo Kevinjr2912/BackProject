@@ -6,7 +6,7 @@ const productsControllers = require('../controllers/productos');
 router.get('/getAllProducts', productsControllers.getAllProducts);
 router.get('/getHelmets', productsControllers.getAllHelmets);
 router.get('/getInformationProduct/:idProducto', productsControllers.getInformationProduct);
-router.post('/addProduct/', productsControllers.addProduct);
+router.post('/addProduct', productsControllers.addProduct);
 router.put('/updateProduct/:id', productsControllers.updateProduct);
 router.delete('/deleteProduct/:id', productsControllers.deleteProduct);
 
