@@ -1,5 +1,26 @@
+//Cargar las variables de entorno
+const db = require('../database/conecction');
+const jwt = require("jsonwebtoken");
 
-exports.addCar = (req, res) => {
+// Middleware de autenticación
+const authenticateJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const token = authHeader.split(" ")[1];
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+      if (err) {
+        return res.sendStatus(403);
+      }
+      req.user = user;
+      next();
+    });
+  } else {
+    res.sendStatus(401);
+  }
+};
+
+
+exports.addCar = [authenticateJWT,(req, res) => {
   const { idCliente, idProducto, cantidad } = req.body;
   console.log(req.body);
   db.query(
@@ -90,9 +111,9 @@ exports.addCar = (req, res) => {
       }
     }
   );
-};
+}];
 
-exports.getProductsCar = (req, res) => {
+exports.getProductsCar = [authenticateJWT,(req, res) => {
   const idCliente = req.params.idCustomer;
 
   db.query(
@@ -129,9 +150,9 @@ exports.getProductsCar = (req, res) => {
       );
     }
   );
-};
+}];
 
-exports.gethPurchaseSummary = (req, res) => {
+exports.gethPurchaseSummary = [authenticateJWT,(req, res) => {
   const idCustomer = req.params.idCustomer;
 
   db.query('SELECT Carrito.idCarrito FROM Carrito WHERE Carrito.idCliente = ?',[idCustomer],(err,result)=>{
@@ -158,9 +179,9 @@ exports.gethPurchaseSummary = (req, res) => {
       }
     );
   });
-};
+}];
 
-exports.deleteProductCar = (req, res) => {
+exports.deleteProductCar = [authenticateJWT,(req, res) => {
   const idProducto = req.params.idProducto;
   const {idCliente } = req.body;
 
@@ -192,4 +213,4 @@ exports.deleteProductCar = (req, res) => {
     );
     })
   });
-};
+}];

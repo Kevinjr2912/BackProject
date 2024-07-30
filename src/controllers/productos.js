@@ -1,6 +1,5 @@
 //Cargar las variables de entorno
 const db = require('../database/conecction');
-const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require('path');
@@ -43,14 +42,11 @@ const upload = multer({
   }
 }).array("imagen",3);
 
-exports.addProduct = (req, res) => {
+exports.addProduct = [authenticateJWT,(req, res) => {
   upload(req, res, (err) => {
     if (err) {
-      console.error('Error en Multer:', err);
       return res.status(400).send(err.message);
     }
-    
-    console.log('Cuerpo de la solicitud:', req.body);
 
     if (!req.files || req.files.length === 0) {
       return res.status(400).send('No se subieron los archivos');
@@ -76,7 +72,6 @@ exports.addProduct = (req, res) => {
           [imageValues],
           (err) => {
             if (err) {
-              console.error('Error al agregar imágenes:', err);
               return res.status(500).json({ message: "Error al agregar las imágenes del producto" });
             }
             return res.status(201).json({ message: "Producto e imágenes agregadas exitosamente" });
@@ -85,9 +80,9 @@ exports.addProduct = (req, res) => {
       }
     );
   });
-};
+}];
 
-exports.getAllProducts = (req, res) => {
+exports.getAllProducts = [authenticateJWT,(req, res) => {
   db.query(
     "SELECT Productos.idProductos, Productos.nombre, Productos.precio, Productos.descripcion,Categoria.nombreCategoria, Equipo.nombre_equipo FROM Productos INNER JOIN Categoria ON Productos.id_categoria = Categoria.idCategoria INNER JOIN Equipo ON Productos.id_equipo = Equipo.idEquipo ",
     (err, result) => {
@@ -96,15 +91,14 @@ exports.getAllProducts = (req, res) => {
           .status(500)
           .json({ message: "Error al obtener los elementos" });
       }
-      console.log(result);
       return res.json(result);
     }
   );
-};
+}];
 
-exports.getAllHelmets = (req, res) => {
+exports.getAllHelmets = [authenticateJWT,(req, res) => {
   db.query(
-    "SELECT P.idProductos, P.nombre, P.precio, P.descripcion, C.nombreCategoria, E.nombre_equipo,IP.filename FROM Productos P INNER JOIN Categoria C ON P.id_categoria = C.idCategoria INNER JOIN Equipo E ON P.id_equipo = E.idEquipo INNER JOIN ImagenProducto IP ON IP.idProducto = P.idProductos GROUP BY IP.idProducto",
+    "SELECT P.idProductos, P.nombre, P.precio, P.descripcion, C.nombreCategoria, E.nombre_equipo,IP.filename FROM Productos P INNER JOIN Categoria C ON P.id_categoria = C.idCategoria INNER JOIN Equipo E ON P.id_equipo = E.idEquipo INNER JOIN ImagenProducto IP ON IP.idProducto = P.idProductos WHERE C.nombreCategoria = 'Casco' GROUP BY IP.idProducto;",
     (err, result) => {
       if (err) {
         console.log(err)
@@ -121,13 +115,36 @@ exports.getAllHelmets = (req, res) => {
         filename: product.filename,
       }));
 
-      // console.log(products);
       return res.json(products);
     }
   );
-};
+}];
 
-exports.getInformationProduct = (req, res) => {
+exports.getAllOveralls = [authenticateJWT,(req, res) => {
+  db.query(
+    "SELECT P.idProductos, P.nombre, P.precio, P.descripcion, C.nombreCategoria, E.nombre_equipo,IP.filename FROM Productos P INNER JOIN Categoria C ON P.id_categoria = C.idCategoria INNER JOIN Equipo E ON P.id_equipo = E.idEquipo INNER JOIN ImagenProducto IP ON IP.idProducto = P.idProductos WHERE C.nombreCategoria = 'Overol' GROUP BY IP.idProducto",
+    (err, result) => {
+      if (err) {
+        console.log(err)
+        return res.json({ error: "Error al obtener los cascos" });
+      }
+
+      const products = result.map((product) => ({
+        idProducto: product.idProductos,
+        nombre: product.nombre, 
+        precio: product.precio,
+        descripcion: product.descripcion,
+        nombreCategoria: product.nombreCategoria,
+        nombreEquipo: product.nombre_equipo,
+        filename: product.filename,
+      }));
+
+      return res.json(products);
+    }
+  );
+}];
+
+exports.getInformationProduct = [authenticateJWT,(req, res) => {
   const idProducto = req.params.idProducto;
   console.log(idProducto);
   let objInformationProduct = {};
@@ -169,24 +186,21 @@ exports.getInformationProduct = (req, res) => {
         objInformationProduct.nombreCategoria = result[0].nombreCategoria;
       }
 
-      console.log(objInformationProduct)
-
       return res.json(objInformationProduct);
     }
   );
-};
+}];
 
-exports.updateProduct = (req, res) => {
+exports.updateProduct = [authenticateJWT,(req, res) => {
   const productId = req.params.id;
-  const productFront = req.body;
   const { nombre, precio, descripcion, equipo } = req.body;
+  let productFront = req.body;
 
-  db.query(
+  db.query( 
     "SELECT * FROM Productos WHERE idProductos = ?",
     [productId],
     (err, result) => {
       if (err) {
-        console.error("Error al obtener el producto:", err);
         return res
           .status(500)
           .json({
@@ -203,19 +217,32 @@ exports.updateProduct = (req, res) => {
       }
 
       const product = result[0];
+      console.log(product)
       const updateProduct = {};
 
       if (nombre != product.nombre) {
         updateProduct.nombre = nombre;
+        productFront.nombre = nombre;
       }
       if (precio != product.precio) {
         updateProduct.precio = precio;
+        productFront.precio = precio;
       }
       if (descripcion != product.descripcion) {
         updateProduct.descripcion = descripcion;
+        productFront.descripcion = descripcion;
       }
-      if (equipo != product.equipo) {
-        updateProduct.equipo = equipo;
+      if (equipo != product.id_equipo) {
+        updateProduct.id_equipo = equipo;
+        productFront.equipo = equipo;
+      }
+
+      console.log(updateProduct)
+
+      if (Object.keys(updateProduct).length === 0) {
+        return res.status(400).json({
+          message: "No hay datos para actualizar",
+        });
       }
 
       db.query(
@@ -223,7 +250,7 @@ exports.updateProduct = (req, res) => {
         [updateProduct, productId],
         (err, result) => {
           if (err) {
-            console.error("Error al actualizar el producto:", err);
+            console.log(err)
             return res
               .status(500)
               .json({ message: "Error al modificar algún dato del producto" });
@@ -233,9 +260,10 @@ exports.updateProduct = (req, res) => {
       );
     }
   );
-};
+}];
 
-exports.deleteProduct = (req, res) => {
+
+exports.deleteProduct = [authenticateJWT,(req, res) => {
   const productId = req.params.id;
 
   console.log(productId);
@@ -245,6 +273,7 @@ exports.deleteProduct = (req, res) => {
     productId,
     (err, result) => {
       if (err) {
+        console.log(err)
         res
           .status(500)
           .send(
@@ -259,6 +288,7 @@ exports.deleteProduct = (req, res) => {
     "DELETE FROM Productos WHERE idProductos = ?",
     productId,
     (err, result) => {
+      console.log(err)
       if (err) {
         res.status(500).send("Error al eliminar dicho producto");
       }
@@ -268,6 +298,66 @@ exports.deleteProduct = (req, res) => {
         .send(
           "Producto eliminado de la base de datos así como sus respectivas imágenes"
         );
+    }
+  );
+}];
+
+
+// Controlador
+exports.getOchoHelmets = (req, res) => {
+  console.log("Fetching helmets...");
+  db.query(
+    "SELECT P.idProductos, P.nombre, P.precio, P.descripcion, C.nombreCategoria, E.nombre_equipo,IP.filename FROM Productos P INNER JOIN Categoria C ON P.id_categoria = C.idCategoria INNER JOIN Equipo E ON P.id_equipo = E.idEquipo INNER JOIN ImagenProducto IP ON IP.idProducto = P.idProductos WHERE C.nombreCategoria = 'Casco' GROUP BY IP.idProducto LIMIT 8;",
+    (err, result) => {
+      if (err) {
+        console.error("Error al obtener los cascos:", err);
+        return res.json({ error: "Error al obtener los cascos" });
+      }
+
+      console.log("Raw result:", result);
+
+      const products = result.map((product) => ({
+        idProducto: product.idProductos,
+        nombre: product.nombre, 
+        precio: product.precio,
+        descripcion: product.descripcion,
+        nombreCategoria: product.nombreCategoria,
+        nombreEquipo: product.nombre_equipo,
+        filename: product.filename,
+      }));
+
+      console.log("Processed products:", products);
+
+      res.json(products);
+    }
+  );
+};
+
+exports.getOchoOveroles = (req, res) => {
+  console.log("Fetching overalls...");
+  db.query(
+   "SELECT P.idProductos, P.nombre, P.precio, P.descripcion, C.nombreCategoria, E.nombre_equipo,IP.filename FROM Productos P INNER JOIN Categoria C ON P.id_categoria = C.idCategoria INNER JOIN Equipo E ON P.id_equipo = E.idEquipo INNER JOIN ImagenProducto IP ON IP.idProducto = P.idProductos WHERE C.nombreCategoria = 'Overol  ' GROUP BY IP.idProducto LIMIT 8;",
+    (err, result) => {
+      if (err) {
+        console.error("Error al obtener los overoles:", err);
+        return res.json({ error: "Error al obtener los overoles" });
+      }
+
+      console.log("Raw result:", result);
+
+      const products = result.map((product) => ({
+        idProducto: product.idProductos,
+        nombre: product.nombre, 
+        precio: product.precio,
+        descripcion: product.descripcion,
+        nombreCategoria: product.nombreCategoria,
+        nombreEquipo: product.nombre_equipo,
+        filename: product.filename,
+      }));
+
+      console.log("Processed products:", products);
+
+      res.json(products);
     }
   );
 };
